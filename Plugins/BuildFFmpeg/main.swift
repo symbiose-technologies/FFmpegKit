@@ -153,7 +153,7 @@ private class BaseBuild {
     }
 
     func buildALL() throws {
-        try FileManager.default.removeItem(at: URL.currentDirectory + library.rawValue)
+        try? FileManager.default.removeItem(at: URL.currentDirectory + library.rawValue)
         for platform in BaseBuild.platforms {
             for arch in architectures(platform) {
                 try build(platform: platform, arch: arch)
@@ -575,9 +575,10 @@ private class BuildFFMPEG: BaseBuild {
         "--enable-videotoolbox", "--enable-audiotoolbox",
         // Individual component options:
         // ,"--disable-everything"
-        // 用所有的encoders的话，那avcodec就会达到40MB了，指定的话，那就只要20MB。
+        // ./configure --list-encoders
         "--disable-encoders",
         // ./configure --list-decoders
+        // 用所有的decoders的话，那avcodec就会达到40MB了，指定的话，那就只要20MB。
         "--disable-decoders",
         // 视频
         "--enable-decoder=av1", "--enable-decoder=dca", "--enable-decoder=flv", "--enable-decoder=h263",
@@ -610,14 +611,14 @@ private class BuildFFMPEG: BaseBuild {
         "--enable-demuxer=flac", "--enable-demuxer=flv", "--enable-demuxer=h264", "--enable-demuxer=hevc",
         "--enable-demuxer=hls", "--enable-demuxer=live_flv", "--enable-demuxer=loas", "--enable-demuxer=m4v",
         "--enable-demuxer=matroska", "--enable-demuxer=mov", "--enable-demuxer=mp3", "--enable-demuxer=mpeg*",
-        "--enable-demuxer=ogg", "--enable-demuxer=rm", "--enable-demuxer=rtsp", "--enable-demuxer=srt",
+        "--enable-demuxer=ogg", "--enable-demuxer=rm", "--enable-demuxer=rtsp", "--enable-demuxer=rtp", "--enable-demuxer=srt",
         "--enable-demuxer=vc1", "--enable-demuxer=wav", "--enable-demuxer=webm_dash_manifest",
         // ./configure --list-protocols
         "--enable-protocols",
         "--disable-protocol=bluray", "--disable-protocol=ffrtmpcrypt", "--disable-protocol=gopher", "--disable-protocol=icecast",
         "--disable-protocol=librtmp*", "--disable-protocol=libssh", "--disable-protocol=md5", "--disable-protocol=mmsh",
         "--disable-protocol=mmst", "--disable-protocol=sctp", "--disable-protocol=subfile", "--disable-protocol=unix",
-        // filters
+        // ./configure --list-filters
         "--disable-filters",
         "--enable-filter=aformat", "--enable-filter=amix", "--enable-filter=anull", "--enable-filter=aresample",
         "--enable-filter=areverse", "--enable-filter=asetrate", "--enable-filter=atempo", "--enable-filter=atrim",
@@ -677,6 +678,9 @@ private class BuildGmp: BaseBuild {
 
 private class BuildNettle: BaseBuild {
     init() {
+        if Utility.shell("which autoconf") == nil {
+            Utility.shell("brew install autoconf")
+        }
         super.init(library: .nettle)
     }
 
@@ -701,6 +705,15 @@ private class BuildNettle: BaseBuild {
 
 private class BuildGnutls: BaseBuild {
     init() {
+        if Utility.shell("which automake") == nil {
+            Utility.shell("brew install automake")
+        }
+        if Utility.shell("which gtk-doc") == nil {
+            Utility.shell("brew install gtk-doc")
+        }
+        if Utility.shell("which wget") == nil {
+            Utility.shell("brew install wget")
+        }
         super.init(library: .gnutls)
     }
 
@@ -721,7 +734,6 @@ private class BuildGnutls: BaseBuild {
                 "--disable-tools",
                 "--disable-maintainer-mode",
                 "--disable-full-test-suite",
-                "--disable-debug",
                 "--with-pic",
                 "--enable-static",
                 "--disable-shared",
