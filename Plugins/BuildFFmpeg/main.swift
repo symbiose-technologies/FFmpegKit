@@ -148,7 +148,7 @@ private class BaseBuild {
         self.library = library
         directoryURL = URL.currentDirectory + "\(library.rawValue)-\(library.version)"
         if !FileManager.default.fileExists(atPath: directoryURL.path) {
-            try! Utility.launch(path: "/usr/bin/git", arguments: ["clone", "--depth", "1", "--branch", library.version, library.url, directoryURL.path])
+            try! Utility.launch(path: "/usr/bin/git", arguments: ["clone", "--recurse-submodules", "--depth", "1", "--branch", library.version, library.url, directoryURL.path])
         }
     }
 
@@ -214,7 +214,7 @@ private class BaseBuild {
          "LDFLAGS": ldFlags(platform: platform, arch: arch),
          "PKG_CONFIG_PATH": pkgConfigPath(platform: platform, arch: arch),
          "CMAKE_OSX_ARCHITECTURES": arch.rawValue,
-         "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"]
+        ]
     }
 
     func ccFlags(platform _: PlatformType, arch _: ArchType) -> String {
@@ -685,20 +685,22 @@ private class BuildNettle: BaseBuild {
     }
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
-        super.arguments(platform: platform, arch: arch) +
+        let gmpPath = URL.currentDirectory + ["gmp", platform.rawValue, "thin", arch.rawValue]
+        return super.arguments(platform: platform, arch: arch) +
             [
+                "--with-include-path=\(gmpPath.path)/include",
+                "--with-lib-path=\(gmpPath.path)/lib",
                 "--disable-mini-gmp",
                 "--disable-assembler",
                 "--disable-openssl",
                 "--disable-gcov",
                 "--disable-documentation",
-                "--with-pic",
+                "--enable-pic",
                 "--enable-static",
                 "--disable-shared",
-                "--disable-fast-install",
                 "--disable-dependency-tracking",
                 "--host=\(platform.host(arch: arch))",
-                "--with-sysroot=\(platform.isysroot())",
+                arch == .arm64 || arch == .arm64e ? "--enable-arm-neon" : "--enable-x86-aesni",
             ]
     }
 }
@@ -708,15 +710,22 @@ private class BuildGnutls: BaseBuild {
         if Utility.shell("which automake") == nil {
             Utility.shell("brew install automake")
         }
-        if Utility.shell("which gtk-doc") == nil {
+        if Utility.shell("which gtkdocize") == nil {
             Utility.shell("brew install gtk-doc")
         }
         if Utility.shell("which wget") == nil {
             Utility.shell("brew install wget")
         }
+        Utility.shell("brew install bison")
         super.init(library: .gnutls)
     }
-
+    override func environment(platform: PlatformType, arch: ArchType) -> [String: String] {
+        var environ = super.environment(platform: platform, arch: arch)
+        let gmpPath = URL.currentDirectory + ["gmp", platform.rawValue, "thin", arch.rawValue]
+        environ["GMP_CFLAGS"] = "-I\(gmpPath.path)/include"
+        environ["GMP_LIBS"] = "-L\(gmpPath.path)/lib -lgmp"
+        return environ
+    }
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
         super.arguments(platform: platform, arch: arch) +
             [
@@ -1113,6 +1122,8 @@ enum Utility {
     static func launch(executableURL: URL, arguments: [String], isOutput: Bool = false, currentDirectoryURL: URL? = nil, environment: [String: String] = [:]) throws -> String {
         #if os(macOS)
         let task = Process()
+        var environment = environment
+        environment["PATH"] = "/usr/local/bin:/opt/homebrew/bin:/usr/local/opt/bison/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         task.environment = environment
         var standardOutput: FileHandle?
         if isOutput {
