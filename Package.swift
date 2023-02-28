@@ -22,7 +22,7 @@ let package = Package(
         .executable(name: "ffplay", targets: ["ffplay"]),
         .executable(name: "ffmpeg", targets: ["ffmpeg"]),
         .executable(name: "ffprobe", targets: ["ffprobe"]),
-        .plugin(name: "BuildFFmpeg", targets: ["BuildFFmpeg"]),
+//        .plugin(name: "BuildFFmpeg", targets: ["BuildFFmpeg"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
@@ -85,23 +85,23 @@ let package = Package(
 //            name: "libavutil",
 //            cSettings: [.headerSearchPath("../")]
 //        ),
-//                .executableTarget(
-//                    name: "BuildFFmpegPlugin",
-//                    path: "Plugins/BuildFFmpeg"
-//                ),
-        .plugin(
-            name: "BuildFFmpeg",
-            capability: .command(
-                intent: .custom(
-                    verb: "BuildFFmpeg",
-                    description: "You can customize FFmpeg and then compile FFmpeg"
-                ),
-                permissions: [
-                    .writeToPackageDirectory(reason: "This command compile FFmpeg and generate xcframework. compile FFmpeg need brew install nasm sdl2 cmake. So you need swift package --allow-writing-to-directory /usr/local/ --allow-writing-to-directory ~/Library/ BuildFFmpeg enable-openssl"),
-                    // .allowNetworkConnections(scope: .all(), reason: "internet good"),
-                ]
-            )
+        .executableTarget(
+            name: "BuildFFmpegPlugin",
+            path: "Plugins/BuildFFmpeg"
         ),
+//        .plugin(
+//            name: "BuildFFmpeg",
+//            capability: .command(
+//                intent: .custom(
+//                    verb: "BuildFFmpeg",
+//                    description: "You can customize FFmpeg and then compile FFmpeg"
+//                ),
+//                permissions: [
+//                    .writeToPackageDirectory(reason: "This command compile FFmpeg and generate xcframework. compile FFmpeg need brew install nasm sdl2 cmake. So you need swift package --allow-writing-to-directory /usr/local/ --allow-writing-to-directory ~/Library/ BuildFFmpeg enable-openssl"),
+//                    // .allowNetworkConnections(scope: .all(), reason: "internet good"),
+//                ]
+//            )
+//        ),
         .binaryTarget(
             name: "Libavcodec",
             path: "Sources/Libavcodec.xcframework"

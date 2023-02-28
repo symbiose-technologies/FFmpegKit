@@ -30,6 +30,7 @@ extension Build {
 #endif
 
 extension Build {
+    static var ffmpegConfiguers = [String]()
     static func performCommand(arguments: [String]) throws {
         print(arguments)
         if Utility.shell("which brew") == nil {
@@ -55,87 +56,140 @@ extension Build {
                 return nil
             }
         }
-        if BaseBuild.platforms.isEmpty {
+
+        var platforms = [PlatformType]()
+        var librarys = [Library]()
+        var disableFFmpeg = false
+        // enable-openssl enable-libsrt enable-libfreetype enable-libfribidi enable-libharfbuzz enable-libass enable-gmp enable-nettle enable-gnutls enable-libsmbclient disable-ffmpeg enable-mpv
+        for argument in arguments {
+            if argument.hasPrefix("platform=") {
+                let value = String(argument.suffix(argument.count - "platform=".count))
+                if let platform = PlatformType(rawValue: value) {
+                    platforms.append(platform)
+                }
+            } else if argument.hasPrefix("enable-") {
+                let value = String(argument.suffix(argument.count - "enable-".count))
+                if let library = Library(rawValue: value) {
+                    librarys.append(library)
+                } else {
+                    Build.ffmpegConfiguers.append(argument)
+                }
+            } else if argument == " " {
+                disableFFmpeg = true
+            } else {
+                Build.ffmpegConfiguers.append(argument)
+            }
+        }
+        
+        if platforms.isEmpty {
             BaseBuild.platforms = PlatformType.allCases
-        }
-        if arguments.firstIndex(of: "enable-openssl") != nil {
-            try BuildOpenSSL().buildALL()
-        }
-        if arguments.firstIndex(of: "enable-libsrt") != nil {
-            try BuildSRT().buildALL()
+        } else {
+            BaseBuild.platforms = platforms
         }
 
-        if arguments.firstIndex(of: "enable-libass") != nil {
-            //            try BuildPng().buildALL()
-            try BuildFreetype().buildALL()
-            try BuildFribidi().buildALL()
-            try BuildHarfbuzz().buildALL()
-            try BuildASS().buildALL()
+        if !disableFFmpeg {
+            librarys.append(.FFmpeg)
         }
-        if arguments.firstIndex(of: "enable-libsmbclient") != nil {
-            try BuildGmp().buildALL()
-            try BuildNettle().buildALL()
-            try BuildGnutls().buildALL()
-            try BuildSmbclient().buildALL()
-        }
-        if arguments.firstIndex(of: "disable-ffmpeg") == nil {
-            try BuildFFMPEG(arguments: arguments).buildALL()
-        }
-        if arguments.firstIndex(of: "enable-mpv") != nil {
-            try BuildMPV().buildALL()
+
+        for library in librarys {
+            try library.build.buildALL()
         }
     }
 }
 
 private enum Library: String, CaseIterable {
-    case FFmpeg, freetype, fribidi, harfbuzz, libass, libpng, mpv, openssl, srt, smbclient, gnutls, gmp, nettle
+    case libfreetype, libfribidi, libass, openssl, libsrt, libsmbclient, libgnutls, libgmp, FFmpeg, nettle, harfbuzz, png, mpv
     var version: String {
         switch self {
         case .FFmpeg:
             return "n5.1.2"
-        case .freetype:
+        case .libfreetype:
             return "VER-2-12-1"
-        case .fribidi:
+        case .libfribidi:
             return "v1.0.12"
         case .harfbuzz:
             return "5.3.1"
         case .libass:
             return "0.17.0"
-        case .libpng:
+        case .png:
             return "v1.6.39"
         case .mpv:
             return "v0.35.0"
         case .openssl:
             return "openssl-3.0.7"
-        case .srt:
+        case .libsrt:
             return "v1.5.1"
-        case .smbclient:
+        case .libsmbclient:
             return "samba-4.17.5"
-        case .gnutls:
+        case .libgnutls:
             return "3.7.8"
         case .nettle:
             return "nettle_3.8.1_release_20220727"
-        case .gmp:
+        case .libgmp:
             return "v6.2.1"
         }
     }
 
     var url: String {
         switch self {
-        case .libpng:
-            return "https://github.com/glennrp/\(rawValue)"
+        case .png:
+            return "https://github.com/glennrp/libpng"
         case .mpv:
             return "https://github.com/\(rawValue)-player/\(rawValue)"
-        case .srt:
-            return "https://github.com/Haivision/\(rawValue)"
-        case .smbclient:
+        case .libsrt:
+            return "https://github.com/Haivision/srt"
+        case .libsmbclient:
             return "https://github.com/samba-team/samba"
         case .nettle:
             return "https://github.com/gnutls/nettle"
-        case .gmp:
+        case .libgmp:
             return "https://github.com/alisw/GMP"
         default:
-            return "https://github.com/\(rawValue)/\(rawValue)"
+            var value = rawValue
+            if self != .libass, value.hasPrefix("lib") {
+                value = String(value.suffix(value.count - "lib".count))
+            }
+            return "https://github.com/\(value)/\(value)"
+        }
+    }
+
+    var isFFmpegDependentLibrary: Bool {
+        switch self {
+        case .png, .harfbuzz, .nettle, .mpv, .FFmpeg:
+            return false
+        default:
+            return true
+        }
+    }
+
+    var build: BaseBuild {
+        switch self {
+        case .FFmpeg:
+            return BuildFFMPEG()
+        case .libfreetype:
+            return BuildFreetype()
+        case .libfribidi:
+            return BuildFribidi()
+        case .harfbuzz:
+            return BuildHarfbuzz()
+        case .libass:
+            return BuildASS()
+        case .png:
+            return BuildPng()
+        case .mpv:
+            return BuildMPV()
+        case .openssl:
+            return BuildOpenSSL()
+        case .libsrt:
+            return BuildSRT()
+        case .libsmbclient:
+            return BuildSmbclient()
+        case .libgnutls:
+            return BuildGnutls()
+        case .nettle:
+            return BuildNettle()
+        case .libgmp:
+            return BuildGmp()
         }
     }
 }
@@ -213,8 +267,7 @@ private class BaseBuild {
          "CXXFLAGS": cFlags(platform: platform, arch: arch),
          "LDFLAGS": ldFlags(platform: platform, arch: arch),
          "PKG_CONFIG_PATH": pkgConfigPath(platform: platform, arch: arch),
-         "CMAKE_OSX_ARCHITECTURES": arch.rawValue,
-        ]
+         "CMAKE_OSX_ARCHITECTURES": arch.rawValue]
     }
 
     func ccFlags(platform _: PlatformType, arch _: ArchType) -> String {
@@ -368,8 +421,8 @@ private class BaseBuild {
 
 private class BuildFFMPEG: BaseBuild {
     private let isDebug: Bool
-    init(arguments: [String]) {
-        isDebug = arguments.firstIndex(of: "enable-debug") != nil
+    init() {
+        isDebug = Build.ffmpegConfiguers.firstIndex(of: "enable-debug") != nil
         super.init(library: .FFmpeg)
     }
 
@@ -470,6 +523,7 @@ private class BuildFFMPEG: BaseBuild {
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
         var arguments = super.arguments(platform: platform, arch: arch)
+        arguments += Build.ffmpegConfiguers
         arguments += ffmpegConfiguers
         arguments.append("--target-os=darwin")
         arguments.append("--arch=\(arch.arch())")
@@ -515,13 +569,12 @@ private class BuildFFMPEG: BaseBuild {
         //        if platform == .isimulator || platform == .tvsimulator {
         //            arguments.append("--assert-level=1")
         //        }
-        for library in [Library.openssl, .libass, .fribidi, .freetype, .srt, .smbclient] {
+        for library in Library.allCases {
             let path = URL.currentDirectory + [library.rawValue, platform.rawValue, "thin", arch.rawValue]
-            if FileManager.default.fileExists(atPath: path.path) {
-                let libraryName = [.openssl, .libass].contains(library) ? library.rawValue : "lib" + library.rawValue
-                arguments.append("--enable-\(libraryName)")
-                if library == .srt {
-                    arguments.append("--enable-protocol=\(libraryName)")
+            if FileManager.default.fileExists(atPath: path.path), library.isFFmpegDependentLibrary {
+                arguments.append("--enable-\(library.rawValue)")
+                if library == .libsrt {
+                    arguments.append("--enable-protocol=\(library.rawValue)")
                 }
             }
         }
@@ -648,17 +701,44 @@ private class BuildOpenSSL: BaseBuild {
 
 private class BuildSmbclient: BaseBuild {
     init() {
-        super.init(library: .smbclient)
+        super.init(library: .libsmbclient)
     }
 
     override func scratch(platform _: PlatformType, arch _: ArchType) -> URL {
         directoryURL
     }
+
+    override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
+        super.arguments(platform: platform, arch: arch) +
+            [
+                "--bundled-libraries=NONE,ldb,tdb,tevent",
+                "--disable-cephfs",
+                "--disable-cups",
+                "--disable-iprint",
+                "--disable-glusterfs",
+                "--disable-python",
+                "--without-acl-support",
+                "--without-ad-dc",
+                "--without-ads",
+                "--without-ldap",
+                "--without-libarchive",
+                "--without-json",
+                "--without-pam",
+                "--without-regedit",
+                "--without-syslog",
+                "--without-utmp",
+                "--without-winbind",
+                "--without-acl-support",
+                "--with-shared-modules=!vfs_snapper",
+                "--with-system-mitkrb5",
+                "--host=\(platform.host(arch: arch))",
+            ]
+    }
 }
 
 private class BuildGmp: BaseBuild {
     init() {
-        super.init(library: .gmp)
+        super.init(library: .libgmp)
     }
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
@@ -717,8 +797,9 @@ private class BuildGnutls: BaseBuild {
             Utility.shell("brew install wget")
         }
         Utility.shell("brew install bison")
-        super.init(library: .gnutls)
+        super.init(library: .libgnutls)
     }
+
     override func environment(platform: PlatformType, arch: ArchType) -> [String: String] {
         var environ = super.environment(platform: platform, arch: arch)
         let gmpPath = URL.currentDirectory + ["gmp", platform.rawValue, "thin", arch.rawValue]
@@ -726,6 +807,7 @@ private class BuildGnutls: BaseBuild {
         environ["GMP_LIBS"] = "-L\(gmpPath.path)/lib -lgmp"
         return environ
     }
+
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
         super.arguments(platform: platform, arch: arch) +
             [
@@ -756,7 +838,7 @@ private class BuildGnutls: BaseBuild {
 
 private class BuildSRT: BaseBuild {
     init() {
-        super.init(library: .srt)
+        super.init(library: .libsrt)
     }
 
     override func buildALL() throws {
@@ -793,7 +875,7 @@ private class BuildSRT: BaseBuild {
 
 private class BuildFribidi: BaseBuild {
     init() {
-        super.init(library: .fribidi)
+        super.init(library: .libfribidi)
     }
 
     override func configure(buildURL: URL, environ: [String: String], platform: PlatformType, arch: ArchType) throws {
@@ -846,7 +928,7 @@ private class BuildHarfbuzz: BaseBuild {
 
 private class BuildFreetype: BaseBuild {
     init() {
-        super.init(library: .freetype)
+        super.init(library: .libfreetype)
     }
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
@@ -873,7 +955,7 @@ private class BuildFreetype: BaseBuild {
 
 private class BuildPng: BaseBuild {
     init() {
-        super.init(library: .libpng)
+        super.init(library: .png)
     }
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
