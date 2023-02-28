@@ -31,6 +31,12 @@ extension Build {
 
 extension Build {
     static var ffmpegConfiguers = [String]()
+    /// enable-libsrt depend enable-openssl
+    /// enable-libass depend enable-libfreetype enable-libfribidi enable-libharfbuzz
+    /// enable-gnutls depend enable-nettle enable-gmp
+    /// enable-libsmbclient depend enable-gmp enable-nettle enable-gnutls
+    ///  enable-mpv depend enable-libfreetype enable-libfribidi enable-libharfbuzz enable-libass
+    /// - Parameter arguments: enable-openssl enable-libsrt enable-libfreetype enable-libfribidi enable-libharfbuzz enable-libass enable-gmp enable-nettle enable-gnutls enable-libsmbclient disable-ffmpeg enable-mpv enable-debug platform=macos
     static func performCommand(arguments: [String]) throws {
         print(arguments)
         if Utility.shell("which brew") == nil {
@@ -60,9 +66,13 @@ extension Build {
         var platforms = [PlatformType]()
         var librarys = [Library]()
         var disableFFmpeg = false
-        // enable-openssl enable-libsrt enable-libfreetype enable-libfribidi enable-libharfbuzz enable-libass enable-gmp enable-nettle enable-gnutls enable-libsmbclient disable-ffmpeg enable-mpv
+        var isFFmpegDebug = false
         for argument in arguments {
-            if argument.hasPrefix("platform=") {
+            if argument == "disable-ffmpeg" {
+                disableFFmpeg = true
+            } else if argument == "enable-debug" {
+                isFFmpegDebug = true
+            } else if argument.hasPrefix("platform=") {
                 let value = String(argument.suffix(argument.count - "platform=".count))
                 if let platform = PlatformType(rawValue: value) {
                     platforms.append(platform)
@@ -71,16 +81,20 @@ extension Build {
                 let value = String(argument.suffix(argument.count - "enable-".count))
                 if let library = Library(rawValue: value) {
                     librarys.append(library)
-                } else {
-                    Build.ffmpegConfiguers.append(argument)
                 }
-            } else if argument == " " {
-                disableFFmpeg = true
-            } else {
+            } else if argument.hasPrefix("--") {
                 Build.ffmpegConfiguers.append(argument)
             }
         }
-        
+        if isFFmpegDebug {
+            Build.ffmpegConfiguers.append("--enable-debug")
+            Build.ffmpegConfiguers.append("--disable-stripping")
+            Build.ffmpegConfiguers.append("--disable-optimizations")
+        } else {
+            Build.ffmpegConfiguers.append("--disable-debug")
+            Build.ffmpegConfiguers.append("--enable-stripping")
+            Build.ffmpegConfiguers.append("--enable-optimizations")
+        }
         if platforms.isEmpty {
             BaseBuild.platforms = PlatformType.allCases
         } else {
@@ -89,6 +103,10 @@ extension Build {
 
         if !disableFFmpeg {
             librarys.append(.FFmpeg)
+        }
+        if let index = librarys.firstIndex(of: .mpv) {
+            librarys.remove(at: index)
+            librarys.append(.mpv)
         }
 
         for library in librarys {
@@ -420,9 +438,7 @@ private class BaseBuild {
 }
 
 private class BuildFFMPEG: BaseBuild {
-    private let isDebug: Bool
     init() {
-        isDebug = Build.ffmpegConfiguers.firstIndex(of: "enable-debug") != nil
         super.init(library: .FFmpeg)
     }
 
@@ -523,20 +539,11 @@ private class BuildFFMPEG: BaseBuild {
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
         var arguments = super.arguments(platform: platform, arch: arch)
-        arguments += Build.ffmpegConfiguers
         arguments += ffmpegConfiguers
+        arguments += Build.ffmpegConfiguers
         arguments.append("--target-os=darwin")
         arguments.append("--arch=\(arch.arch())")
         arguments.append(arch.cpu())
-        if isDebug {
-            arguments.append("--enable-debug")
-            arguments.append("--disable-stripping")
-            arguments.append("--disable-optimizations")
-        } else {
-            arguments.append("--disable-debug")
-            arguments.append("--enable-stripping")
-            arguments.append("--enable-optimizations")
-        }
         /**
          aacpsdsp.o), building for Mac Catalyst, but linking in object file built for
          x86_64 binaries are built without ASM support, since ASM for x86_64 is actually x86 and that confuses `xcodebuild -create-xcframework` https://stackoverflow.com/questions/58796267/building-for-macos-but-linking-in-object-file-built-for-free-standing/59103419#59103419
