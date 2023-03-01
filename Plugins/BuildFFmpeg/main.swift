@@ -120,7 +120,7 @@ private enum Library: String, CaseIterable {
     var version: String {
         switch self {
         case .FFmpeg:
-            return "n5.1.2"
+            return "n6.0"
         case .libfreetype:
             return "VER-2-12-1"
         case .libfribidi:
@@ -134,7 +134,7 @@ private enum Library: String, CaseIterable {
         case .mpv:
             return "v0.35.0"
         case .openssl:
-            return "openssl-3.0.7"
+            return "openssl-3.0.8"
         case .libsrt:
             return "v1.5.1"
         case .libsmbclient:
@@ -459,6 +459,7 @@ private class BuildFFMPEG: BaseBuild {
         try FileManager.default.copyItem(at: buildDir + "src/libavutil/thread.h", to: prefix + "include/libavutil/thread.h")
         try FileManager.default.copyItem(at: buildDir + "src/libavutil/intmath.h", to: prefix + "include/libavutil/intmath.h")
         try FileManager.default.copyItem(at: buildDir + "src/libavutil/mem_internal.h", to: prefix + "include/libavutil/mem_internal.h")
+        try FileManager.default.copyItem(at: buildDir + "src/libavutil/attributes_internal.h", to: prefix + "include/libavutil/attributes_internal.h")
         try FileManager.default.copyItem(at: buildDir + "src/libavcodec/mathops.h", to: prefix + "include/libavcodec/mathops.h")
         try FileManager.default.copyItem(at: buildDir + "src/libavformat/os_support.h", to: prefix + "include/libavformat/os_support.h")
         let internalPath = prefix + "include/libavutil/internal.h"
@@ -494,28 +495,34 @@ private class BuildFFMPEG: BaseBuild {
             try FileManager.default.copyItem(at: buildDir + "src/libpostproc/postprocess.h", to: fftoolsFile + "include/libpostproc/postprocess.h")
             try FileManager.default.copyItem(at: buildDir + "src/libpostproc/version_major.h", to: fftoolsFile + "include/libpostproc/version_major.h")
             try FileManager.default.copyItem(at: buildDir + "src/libpostproc/version.h", to: fftoolsFile + "include/libpostproc/version.h")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/cmdutils.c", to: fftoolsFile + "cmdutils.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/opt_common.c", to: fftoolsFile + "opt_common.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/cmdutils.h", to: fftoolsFile + "include/cmdutils.h")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/opt_common.h", to: fftoolsFile + "include/opt_common.h")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/fopen_utf8.h", to: fftoolsFile + "include/fopen_utf8.h")
             let ffplayFile = URL.currentDirectory + "../Sources/ffplay"
             try? FileManager.default.removeItem(at: ffplayFile)
             try FileManager.default.createDirectory(at: ffplayFile, withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffplay.c", to: ffplayFile + "ffplay.c")
             let ffprobeFile = URL.currentDirectory + "../Sources/ffprobe"
             try? FileManager.default.removeItem(at: ffprobeFile)
             try FileManager.default.createDirectory(at: ffprobeFile, withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffprobe.c", to: ffprobeFile + "ffprobe.c")
             let ffmpegFile = URL.currentDirectory + "../Sources/ffmpeg"
             try? FileManager.default.removeItem(at: ffmpegFile)
             try FileManager.default.createDirectory(at: ffmpegFile + "include", withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg.h", to: ffmpegFile + "include/ffmpeg.h")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg.c", to: ffmpegFile + "ffmpeg.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg_filter.c", to: ffmpegFile + "ffmpeg_filter.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg_hw.c", to: ffmpegFile + "ffmpeg_hw.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg_mux.c", to: ffmpegFile + "ffmpeg_mux.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg_opt.c", to: ffmpegFile + "ffmpeg_opt.c")
+            let fftools = buildDir + "src/fftools"
+            let fileNames = try FileManager.default.contentsOfDirectory(atPath: fftools.path)
+            for fileName in fileNames {
+                if fileName.hasPrefix("ffplay") {
+                    try FileManager.default.copyItem(at: fftools + fileName, to: ffplayFile + fileName)
+                } else if fileName.hasPrefix("ffprobe") {
+                    try FileManager.default.copyItem(at: fftools + fileName, to: ffprobeFile + fileName)
+                } else if fileName.hasPrefix("ffmpeg") {
+                    if fileName.hasSuffix(".h") {
+                        try FileManager.default.copyItem(at: fftools + fileName, to: ffmpegFile + "include" + fileName)
+                    } else {
+                        try FileManager.default.copyItem(at: fftools + fileName, to: ffmpegFile + fileName)
+                    }
+                } else if fileName.hasSuffix(".h") {
+                    try FileManager.default.copyItem(at: fftools + fileName, to: fftoolsFile + "include" + fileName)
+                } else if fileName.hasSuffix(".c") {
+                    try FileManager.default.copyItem(at: fftools + fileName, to: fftoolsFile + fileName)
+                }
+            }
         }
     }
 
@@ -523,7 +530,7 @@ private class BuildFFMPEG: BaseBuild {
         if framework == "Libavcodec" {
             return ["xvmc", "vdpau", "qsv", "dxva2", "d3d11va", "mathops"]
         } else if framework == "Libavutil" {
-            return ["hwcontext_vulkan", "hwcontext_vdpau", "hwcontext_vaapi", "hwcontext_qsv", "hwcontext_opencl", "hwcontext_dxva2", "hwcontext_d3d11va", "hwcontext_cuda", "getenv_utf8", "intmath", "libm", "thread", "mem_internal", "internal"]
+            return ["hwcontext_vulkan", "hwcontext_vdpau", "hwcontext_vaapi", "hwcontext_qsv", "hwcontext_opencl", "hwcontext_dxva2", "hwcontext_d3d11va", "hwcontext_cuda", "getenv_utf8", "intmath", "libm", "thread", "mem_internal", "internal", "attributes_internal"]
         } else if framework == "Libavformat" {
             return ["os_support"]
         } else {
