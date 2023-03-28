@@ -30,6 +30,13 @@ extension Build {
 #endif
 
 extension Build {
+    static var ffmpegConfiguers = [String]()
+    /// enable-libsrt depend enable-openssl
+    /// enable-libass depend enable-libfreetype enable-libfribidi enable-libharfbuzz
+    /// enable-gnutls depend enable-nettle enable-gmp
+    /// enable-libsmbclient depend enable-gmp enable-nettle enable-gnutls
+    ///  enable-mpv depend enable-libfreetype enable-libfribidi enable-libharfbuzz enable-libass
+    /// - Parameter arguments: enable-openssl enable-libsrt enable-libfreetype enable-libfribidi enable-libharfbuzz enable-libass enable-gmp enable-nettle enable-gnutls enable-libsmbclient disable-ffmpeg enable-mpv enable-debug platform=macos
     static func performCommand(arguments: [String]) throws {
         print(arguments)
         if Utility.shell("which brew") == nil {
@@ -55,87 +62,152 @@ extension Build {
                 return nil
             }
         }
-        if BaseBuild.platforms.isEmpty {
+
+        var platforms = [PlatformType]()
+        var librarys = [Library]()
+        var disableFFmpeg = false
+        var isFFmpegDebug = false
+        for argument in arguments {
+            if argument == "disable-ffmpeg" {
+                disableFFmpeg = true
+            } else if argument == "enable-debug" {
+                isFFmpegDebug = true
+            } else if argument.hasPrefix("platform=") {
+                let value = String(argument.suffix(argument.count - "platform=".count))
+                if let platform = PlatformType(rawValue: value) {
+                    platforms.append(platform)
+                }
+            } else if argument.hasPrefix("enable-") {
+                let value = String(argument.suffix(argument.count - "enable-".count))
+                if let library = Library(rawValue: value) {
+                    librarys.append(library)
+                }
+            } else if argument.hasPrefix("--") {
+                Build.ffmpegConfiguers.append(argument)
+            }
+        }
+        if isFFmpegDebug {
+            Build.ffmpegConfiguers.append("--enable-debug")
+            Build.ffmpegConfiguers.append("--disable-stripping")
+            Build.ffmpegConfiguers.append("--disable-optimizations")
+        } else {
+            Build.ffmpegConfiguers.append("--disable-debug")
+            Build.ffmpegConfiguers.append("--enable-stripping")
+            Build.ffmpegConfiguers.append("--enable-optimizations")
+        }
+        if platforms.isEmpty {
             BaseBuild.platforms = PlatformType.allCases
-        }
-        if arguments.firstIndex(of: "enable-openssl") != nil {
-            try BuildOpenSSL().buildALL()
-        }
-        if arguments.firstIndex(of: "enable-libsrt") != nil {
-            try BuildSRT().buildALL()
+        } else {
+            BaseBuild.platforms = platforms
         }
 
-        if arguments.firstIndex(of: "enable-libass") != nil {
-            //            try BuildPng().buildALL()
-            try BuildFreetype().buildALL()
-            try BuildFribidi().buildALL()
-            try BuildHarfbuzz().buildALL()
-            try BuildASS().buildALL()
+        if !disableFFmpeg {
+            librarys.append(.FFmpeg)
         }
-        if arguments.firstIndex(of: "enable-libsmbclient") != nil {
-            try BuildGmp().buildALL()
-            try BuildNettle().buildALL()
-            try BuildGnutls().buildALL()
-            try BuildSmbclient().buildALL()
+        if let index = librarys.firstIndex(of: .mpv) {
+            librarys.remove(at: index)
+            librarys.append(.mpv)
         }
-        if arguments.firstIndex(of: "disable-ffmpeg") == nil {
-            try BuildFFMPEG(arguments: arguments).buildALL()
-        }
-        if arguments.firstIndex(of: "enable-mpv") != nil {
-            try BuildMPV().buildALL()
+
+        for library in librarys {
+            try library.build.buildALL()
         }
     }
 }
 
 private enum Library: String, CaseIterable {
-    case FFmpeg, freetype, fribidi, harfbuzz, libass, libpng, mpv, openssl, srt, smbclient, gnutls, gmp, nettle
+    case libfreetype, libfribidi, libass, openssl, libsrt, libsmbclient, libgnutls, libgmp, FFmpeg, nettle, harfbuzz, png, mpv
     var version: String {
         switch self {
         case .FFmpeg:
-            return "n5.1.2"
-        case .freetype:
+            return "n6.0"
+        case .libfreetype:
             return "VER-2-12-1"
-        case .fribidi:
+        case .libfribidi:
             return "v1.0.12"
         case .harfbuzz:
             return "5.3.1"
         case .libass:
             return "0.17.0"
-        case .libpng:
+        case .png:
             return "v1.6.39"
         case .mpv:
             return "v0.35.0"
         case .openssl:
-            return "openssl-3.0.7"
-        case .srt:
+            return "openssl-3.0.8"
+        case .libsrt:
             return "v1.5.1"
-        case .smbclient:
+        case .libsmbclient:
             return "samba-4.17.5"
-        case .gnutls:
+        case .libgnutls:
             return "3.7.8"
         case .nettle:
             return "nettle_3.8.1_release_20220727"
-        case .gmp:
+        case .libgmp:
             return "v6.2.1"
         }
     }
 
     var url: String {
         switch self {
-        case .libpng:
-            return "https://github.com/glennrp/\(rawValue)"
+        case .png:
+            return "https://github.com/glennrp/libpng"
         case .mpv:
             return "https://github.com/\(rawValue)-player/\(rawValue)"
-        case .srt:
-            return "https://github.com/Haivision/\(rawValue)"
-        case .smbclient:
+        case .libsrt:
+            return "https://github.com/Haivision/srt"
+        case .libsmbclient:
             return "https://github.com/samba-team/samba"
         case .nettle:
             return "https://github.com/gnutls/nettle"
-        case .gmp:
+        case .libgmp:
             return "https://github.com/alisw/GMP"
         default:
-            return "https://github.com/\(rawValue)/\(rawValue)"
+            var value = rawValue
+            if self != .libass, value.hasPrefix("lib") {
+                value = String(value.suffix(value.count - "lib".count))
+            }
+            return "https://github.com/\(value)/\(value)"
+        }
+    }
+
+    var isFFmpegDependentLibrary: Bool {
+        switch self {
+        case .png, .harfbuzz, .nettle, .mpv, .FFmpeg:
+            return false
+        default:
+            return true
+        }
+    }
+
+    var build: BaseBuild {
+        switch self {
+        case .FFmpeg:
+            return BuildFFMPEG()
+        case .libfreetype:
+            return BuildFreetype()
+        case .libfribidi:
+            return BuildFribidi()
+        case .harfbuzz:
+            return BuildHarfbuzz()
+        case .libass:
+            return BuildASS()
+        case .png:
+            return BuildPng()
+        case .mpv:
+            return BuildMPV()
+        case .openssl:
+            return BuildOpenSSL()
+        case .libsrt:
+            return BuildSRT()
+        case .libsmbclient:
+            return BuildSmbclient()
+        case .libgnutls:
+            return BuildGnutls()
+        case .nettle:
+            return BuildNettle()
+        case .libgmp:
+            return BuildGmp()
         }
     }
 }
@@ -213,8 +285,7 @@ private class BaseBuild {
          "CXXFLAGS": cFlags(platform: platform, arch: arch),
          "LDFLAGS": ldFlags(platform: platform, arch: arch),
          "PKG_CONFIG_PATH": pkgConfigPath(platform: platform, arch: arch),
-         "CMAKE_OSX_ARCHITECTURES": arch.rawValue,
-        ]
+         "CMAKE_OSX_ARCHITECTURES": arch.rawValue]
     }
 
     func ccFlags(platform _: PlatformType, arch _: ArchType) -> String {
@@ -367,9 +438,7 @@ private class BaseBuild {
 }
 
 private class BuildFFMPEG: BaseBuild {
-    private let isDebug: Bool
-    init(arguments: [String]) {
-        isDebug = arguments.firstIndex(of: "enable-debug") != nil
+    init() {
         super.init(library: .FFmpeg)
     }
 
@@ -390,6 +459,7 @@ private class BuildFFMPEG: BaseBuild {
         try FileManager.default.copyItem(at: buildDir + "src/libavutil/thread.h", to: prefix + "include/libavutil/thread.h")
         try FileManager.default.copyItem(at: buildDir + "src/libavutil/intmath.h", to: prefix + "include/libavutil/intmath.h")
         try FileManager.default.copyItem(at: buildDir + "src/libavutil/mem_internal.h", to: prefix + "include/libavutil/mem_internal.h")
+        try FileManager.default.copyItem(at: buildDir + "src/libavutil/attributes_internal.h", to: prefix + "include/libavutil/attributes_internal.h")
         try FileManager.default.copyItem(at: buildDir + "src/libavcodec/mathops.h", to: prefix + "include/libavcodec/mathops.h")
         try FileManager.default.copyItem(at: buildDir + "src/libavformat/os_support.h", to: prefix + "include/libavformat/os_support.h")
         let internalPath = prefix + "include/libavutil/internal.h"
@@ -425,28 +495,34 @@ private class BuildFFMPEG: BaseBuild {
             try FileManager.default.copyItem(at: buildDir + "src/libpostproc/postprocess.h", to: fftoolsFile + "include/libpostproc/postprocess.h")
             try FileManager.default.copyItem(at: buildDir + "src/libpostproc/version_major.h", to: fftoolsFile + "include/libpostproc/version_major.h")
             try FileManager.default.copyItem(at: buildDir + "src/libpostproc/version.h", to: fftoolsFile + "include/libpostproc/version.h")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/cmdutils.c", to: fftoolsFile + "cmdutils.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/opt_common.c", to: fftoolsFile + "opt_common.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/cmdutils.h", to: fftoolsFile + "include/cmdutils.h")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/opt_common.h", to: fftoolsFile + "include/opt_common.h")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/fopen_utf8.h", to: fftoolsFile + "include/fopen_utf8.h")
             let ffplayFile = URL.currentDirectory + "../Sources/ffplay"
             try? FileManager.default.removeItem(at: ffplayFile)
             try FileManager.default.createDirectory(at: ffplayFile, withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffplay.c", to: ffplayFile + "ffplay.c")
             let ffprobeFile = URL.currentDirectory + "../Sources/ffprobe"
             try? FileManager.default.removeItem(at: ffprobeFile)
             try FileManager.default.createDirectory(at: ffprobeFile, withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffprobe.c", to: ffprobeFile + "ffprobe.c")
             let ffmpegFile = URL.currentDirectory + "../Sources/ffmpeg"
             try? FileManager.default.removeItem(at: ffmpegFile)
             try FileManager.default.createDirectory(at: ffmpegFile + "include", withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg.h", to: ffmpegFile + "include/ffmpeg.h")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg.c", to: ffmpegFile + "ffmpeg.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg_filter.c", to: ffmpegFile + "ffmpeg_filter.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg_hw.c", to: ffmpegFile + "ffmpeg_hw.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg_mux.c", to: ffmpegFile + "ffmpeg_mux.c")
-            try FileManager.default.copyItem(at: buildDir + "src/fftools/ffmpeg_opt.c", to: ffmpegFile + "ffmpeg_opt.c")
+            let fftools = buildDir + "src/fftools"
+            let fileNames = try FileManager.default.contentsOfDirectory(atPath: fftools.path)
+            for fileName in fileNames {
+                if fileName.hasPrefix("ffplay") {
+                    try FileManager.default.copyItem(at: fftools + fileName, to: ffplayFile + fileName)
+                } else if fileName.hasPrefix("ffprobe") {
+                    try FileManager.default.copyItem(at: fftools + fileName, to: ffprobeFile + fileName)
+                } else if fileName.hasPrefix("ffmpeg") {
+                    if fileName.hasSuffix(".h") {
+                        try FileManager.default.copyItem(at: fftools + fileName, to: ffmpegFile + "include" + fileName)
+                    } else {
+                        try FileManager.default.copyItem(at: fftools + fileName, to: ffmpegFile + fileName)
+                    }
+                } else if fileName.hasSuffix(".h") {
+                    try FileManager.default.copyItem(at: fftools + fileName, to: fftoolsFile + "include" + fileName)
+                } else if fileName.hasSuffix(".c") {
+                    try FileManager.default.copyItem(at: fftools + fileName, to: fftoolsFile + fileName)
+                }
+            }
         }
     }
 
@@ -454,7 +530,7 @@ private class BuildFFMPEG: BaseBuild {
         if framework == "Libavcodec" {
             return ["xvmc", "vdpau", "qsv", "dxva2", "d3d11va", "mathops"]
         } else if framework == "Libavutil" {
-            return ["hwcontext_vulkan", "hwcontext_vdpau", "hwcontext_vaapi", "hwcontext_qsv", "hwcontext_opencl", "hwcontext_dxva2", "hwcontext_d3d11va", "hwcontext_cuda", "getenv_utf8", "intmath", "libm", "thread", "mem_internal", "internal"]
+            return ["hwcontext_vulkan", "hwcontext_vdpau", "hwcontext_vaapi", "hwcontext_qsv", "hwcontext_opencl", "hwcontext_dxva2", "hwcontext_d3d11va", "hwcontext_cuda", "getenv_utf8", "intmath", "libm", "thread", "mem_internal", "internal", "attributes_internal"]
         } else if framework == "Libavformat" {
             return ["os_support"]
         } else {
@@ -471,18 +547,10 @@ private class BuildFFMPEG: BaseBuild {
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
         var arguments = super.arguments(platform: platform, arch: arch)
         arguments += ffmpegConfiguers
+        arguments += Build.ffmpegConfiguers
         arguments.append("--target-os=darwin")
         arguments.append("--arch=\(arch.arch())")
         arguments.append(arch.cpu())
-        if isDebug {
-            arguments.append("--enable-debug")
-            arguments.append("--disable-stripping")
-            arguments.append("--disable-optimizations")
-        } else {
-            arguments.append("--disable-debug")
-            arguments.append("--enable-stripping")
-            arguments.append("--enable-optimizations")
-        }
         /**
          aacpsdsp.o), building for Mac Catalyst, but linking in object file built for
          x86_64 binaries are built without ASM support, since ASM for x86_64 is actually x86 and that confuses `xcodebuild -create-xcframework` https://stackoverflow.com/questions/58796267/building-for-macos-but-linking-in-object-file-built-for-free-standing/59103419#59103419
@@ -515,13 +583,12 @@ private class BuildFFMPEG: BaseBuild {
         //        if platform == .isimulator || platform == .tvsimulator {
         //            arguments.append("--assert-level=1")
         //        }
-        for library in [Library.openssl, .libass, .fribidi, .freetype, .srt, .smbclient] {
+        for library in Library.allCases {
             let path = URL.currentDirectory + [library.rawValue, platform.rawValue, "thin", arch.rawValue]
-            if FileManager.default.fileExists(atPath: path.path) {
-                let libraryName = [.openssl, .libass].contains(library) ? library.rawValue : "lib" + library.rawValue
-                arguments.append("--enable-\(libraryName)")
-                if library == .srt {
-                    arguments.append("--enable-protocol=\(libraryName)")
+            if FileManager.default.fileExists(atPath: path.path), library.isFFmpegDependentLibrary {
+                arguments.append("--enable-\(library.rawValue)")
+                if library == .libsrt {
+                    arguments.append("--enable-protocol=\(library.rawValue)")
                 }
             }
         }
@@ -648,17 +715,44 @@ private class BuildOpenSSL: BaseBuild {
 
 private class BuildSmbclient: BaseBuild {
     init() {
-        super.init(library: .smbclient)
+        super.init(library: .libsmbclient)
     }
 
     override func scratch(platform _: PlatformType, arch _: ArchType) -> URL {
         directoryURL
     }
+
+    override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
+        super.arguments(platform: platform, arch: arch) +
+            [
+                "--bundled-libraries=NONE,ldb,tdb,tevent",
+                "--disable-cephfs",
+                "--disable-cups",
+                "--disable-iprint",
+                "--disable-glusterfs",
+                "--disable-python",
+                "--without-acl-support",
+                "--without-ad-dc",
+                "--without-ads",
+                "--without-ldap",
+                "--without-libarchive",
+                "--without-json",
+                "--without-pam",
+                "--without-regedit",
+                "--without-syslog",
+                "--without-utmp",
+                "--without-winbind",
+                "--without-acl-support",
+                "--with-shared-modules=!vfs_snapper",
+                "--with-system-mitkrb5",
+                "--host=\(platform.host(arch: arch))",
+            ]
+    }
 }
 
 private class BuildGmp: BaseBuild {
     init() {
-        super.init(library: .gmp)
+        super.init(library: .libgmp)
     }
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
@@ -717,8 +811,9 @@ private class BuildGnutls: BaseBuild {
             Utility.shell("brew install wget")
         }
         Utility.shell("brew install bison")
-        super.init(library: .gnutls)
+        super.init(library: .libgnutls)
     }
+
     override func environment(platform: PlatformType, arch: ArchType) -> [String: String] {
         var environ = super.environment(platform: platform, arch: arch)
         let gmpPath = URL.currentDirectory + ["gmp", platform.rawValue, "thin", arch.rawValue]
@@ -726,6 +821,7 @@ private class BuildGnutls: BaseBuild {
         environ["GMP_LIBS"] = "-L\(gmpPath.path)/lib -lgmp"
         return environ
     }
+
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
         super.arguments(platform: platform, arch: arch) +
             [
@@ -756,7 +852,7 @@ private class BuildGnutls: BaseBuild {
 
 private class BuildSRT: BaseBuild {
     init() {
-        super.init(library: .srt)
+        super.init(library: .libsrt)
     }
 
     override func buildALL() throws {
@@ -793,7 +889,7 @@ private class BuildSRT: BaseBuild {
 
 private class BuildFribidi: BaseBuild {
     init() {
-        super.init(library: .fribidi)
+        super.init(library: .libfribidi)
     }
 
     override func configure(buildURL: URL, environ: [String: String], platform: PlatformType, arch: ArchType) throws {
@@ -846,7 +942,7 @@ private class BuildHarfbuzz: BaseBuild {
 
 private class BuildFreetype: BaseBuild {
     init() {
-        super.init(library: .freetype)
+        super.init(library: .libfreetype)
     }
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
@@ -873,7 +969,7 @@ private class BuildFreetype: BaseBuild {
 
 private class BuildPng: BaseBuild {
     init() {
-        super.init(library: .libpng)
+        super.init(library: .png)
     }
 
     override func arguments(platform: PlatformType, arch: ArchType) -> [String] {
